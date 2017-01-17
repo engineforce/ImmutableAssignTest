@@ -1,4 +1,8 @@
 
+#ImmutableAssignTest
+
+Demonstrate using [immutable-assign](https://www.npmjs.com/package/immutable-assign) with webpack and awesome-typescript-loader.
+
 ##Install dependencies
 
     npm install
