@@ -13,5 +13,11 @@ var map2 = iassign(
     }
 );
 
-console.log(map1);
-console.log(map2);
+if (typeof document !== "undefined") {
+    document.querySelector("#status").innerHTML += `<p>${JSON.stringify(map1)}</p>`;
+    document.querySelector("#status").innerHTML += `<p>${JSON.stringify(map2)}</p>`;
+}
+else {
+    console.log(map1);
+    console.log(map2);
+}
