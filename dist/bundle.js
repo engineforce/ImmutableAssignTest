@@ -6,9 +6,9 @@
 /******/ 	function __webpack_require__(moduleId) {
 /******/
 /******/ 		// Check if module is in cache
-/******/ 		if(installedModules[moduleId])
+/******/ 		if(installedModules[moduleId]) {
 /******/ 			return installedModules[moduleId].exports;
-/******/
+/******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = installedModules[moduleId] = {
 /******/ 			i: moduleId,
@@ -73,8 +73,12 @@
 module.exports = function deepFreeze (o) {
   Object.freeze(o);
 
+  var oIsFunction = typeof o === "function";
+  var hasOwnProp = Object.prototype.hasOwnProperty;
+
   Object.getOwnPropertyNames(o).forEach(function (prop) {
-    if (o.hasOwnProperty(prop)
+    if (hasOwnProp.call(o, prop)
+    && (oIsFunction ? prop !== 'caller' && prop !== 'callee' && prop !== 'arguments' : true )
     && o[prop] !== null
     && (typeof o[prop] === "object" || typeof o[prop] === "function")
     && !Object.isFrozen(o[prop])) {
@@ -98,7 +102,7 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
             var deepFreeze = __webpack_require__(0);
         }
         catch (ex) {
-            console.warn("Cannot load deep-freeze module, however you can still use iassign() function.");
+            console.warn("Cannot load deep-freeze-strict module, however you can still use iassign() function.");
         }
         var v = factory(deepFreeze, exports);
         if (v !== undefined)
@@ -115,14 +119,36 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
         root.iassign = factory(root.deepFreeze, {});
     }
 })(this, function (deepFreeze, exports) {
-    //import deepFreeze = require("deep-freeze");
-    // try {
-    //     var deepFreeze: DeepFreeze.DeepFreezeInterface = require("deep-freeze");
-    // } catch (ex) {
-    //     console.warn("Cannot load deep-freeze module, however you can still use iassign() function.");
-    // }
+    var autoCurry = (function () {
+        var toArray = function toArray(arr, from) {
+            return Array.prototype.slice.call(arr, from || 0);
+        };
+        var curry = function curry(fn /* variadic number of args */) {
+            var args = toArray(arguments, 1);
+            return function curried() {
+                return fn.apply(this, args.concat(toArray(arguments)));
+            };
+        };
+        return function autoCurry(fn, numArgs) {
+            numArgs = numArgs || fn.length;
+            return function autoCurried() {
+                if (arguments.length < numArgs) {
+                    return numArgs - arguments.length > 0 ?
+                        autoCurry(curry.apply(this, [fn].concat(toArray(arguments))), numArgs - arguments.length) :
+                        curry.apply(this, [fn].concat(toArray(arguments)));
+                }
+                else {
+                    return fn.apply(this, arguments);
+                }
+            };
+        };
+    }());
     var iassign = _iassign;
+    iassign.fp = autoCurry(_iassignFp);
     iassign.maxGetPropCacheSize = 100;
+    iassign.setOption = function (option) {
+        copyOption(iassign, option);
+    };
     // Immutable Assign
     function _iassign(obj, // Object to set property, it will not be modified.
         getPropOrSetProp, // Function to get property to be updated. Must be pure function.
@@ -139,69 +165,96 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
             context = undefined;
             option = setPropOrOption;
         }
-        option = copyOption(option);
+        option = copyOption(undefined, option, iassign);
         if (deepFreeze && (option.freeze || option.freezeInput)) {
             deepFreeze(obj);
         }
         if (!getProp) {
-            obj = quickCopy(obj);
-            obj = setProp(obj);
+            var newValue = undefined;
+            if (option.ignoreIfNoChange) {
+                newValue = setProp(obj);
+                if (newValue === obj) {
+                    return obj;
+                }
+            }
+            obj = quickCopy(obj, option.useConstructor);
+            obj = option.ignoreIfNoChange ? newValue : setProp(obj);
         }
         else {
             // Check if getProp() is valid
             var value = getProp(obj, context);
+            var newValue = undefined;
+            if (option.ignoreIfNoChange) {
+                newValue = setProp(value);
+                if (newValue === value) {
+                    return obj;
+                }
+            }
             var getPropFuncInfo = parseGetPropFuncInfo(getProp, option);
-            obj = updateProperty(obj, setProp, context, getPropFuncInfo);
+            obj = updateProperty(obj, setProp, newValue, context, getPropFuncInfo, option);
         }
         if (deepFreeze && (option.freeze || option.freezeOutput)) {
             deepFreeze(obj);
         }
         return obj;
     }
+    function _iassignFp(option, getProp, setProp, context, obj) {
+        return _iassign(obj, getProp, setProp, context, option);
+    }
     // For performance
-    function copyOption(option) {
-        var newOption = {};
-        newOption.freeze = iassign.freeze;
-        newOption.freezeInput = iassign.freezeInput;
-        newOption.freezeOutput = iassign.freezeOutput;
-        newOption.disableAllCheck = iassign.disableAllCheck;
-        newOption.disableHasReturnCheck = iassign.disableHasReturnCheck;
-        newOption.disableExtraStatementCheck = iassign.disableExtraStatementCheck;
-        newOption.maxGetPropCacheSize = iassign.maxGetPropCacheSize;
+    function copyOption(target, option, defaultOption) {
+        if (target === void 0) { target = {}; }
+        if (defaultOption) {
+            target.freeze = defaultOption.freeze;
+            target.freezeInput = defaultOption.freezeInput;
+            target.freezeOutput = defaultOption.freezeOutput;
+            target.useConstructor = defaultOption.useConstructor;
+            target.disableAllCheck = defaultOption.disableAllCheck;
+            target.disableHasReturnCheck = defaultOption.disableHasReturnCheck;
+            target.disableExtraStatementCheck = defaultOption.disableExtraStatementCheck;
+            target.maxGetPropCacheSize = defaultOption.maxGetPropCacheSize;
+            target.ignoreIfNoChange = defaultOption.ignoreIfNoChange;
+        }
         if (option) {
             if (option.freeze != undefined) {
-                newOption.freeze = option.freeze;
+                target.freeze = option.freeze;
             }
             if (option.freezeInput != undefined) {
-                newOption.freezeInput = option.freezeInput;
+                target.freezeInput = option.freezeInput;
             }
             if (option.freezeOutput != undefined) {
-                newOption.freezeOutput = option.freezeOutput;
+                target.freezeOutput = option.freezeOutput;
+            }
+            if (option.useConstructor != undefined) {
+                target.useConstructor = option.useConstructor;
             }
             if (option.disableAllCheck != undefined) {
-                newOption.disableAllCheck = option.disableAllCheck;
+                target.disableAllCheck = option.disableAllCheck;
             }
             if (option.disableHasReturnCheck != undefined) {
-                newOption.disableHasReturnCheck = option.disableHasReturnCheck;
+                target.disableHasReturnCheck = option.disableHasReturnCheck;
             }
             if (option.disableExtraStatementCheck != undefined) {
-                newOption.disableExtraStatementCheck = option.disableExtraStatementCheck;
+                target.disableExtraStatementCheck = option.disableExtraStatementCheck;
             }
             if (option.maxGetPropCacheSize != undefined) {
-                newOption.maxGetPropCacheSize = option.maxGetPropCacheSize;
+                target.maxGetPropCacheSize = option.maxGetPropCacheSize;
+            }
+            if (option.ignoreIfNoChange != undefined) {
+                target.ignoreIfNoChange = option.ignoreIfNoChange;
             }
         }
-        return newOption;
+        return target;
     }
-    function updateProperty(obj, setProp, context, getPropFuncInfo) {
+    function updateProperty(obj, setProp, newValue, context, getPropFuncInfo, option) {
         var propValue = undefined;
         for (var propIndex = 0; propIndex < getPropFuncInfo.funcTokens.length; ++propIndex) {
             var _a = getPropFuncInfo.funcTokens[propIndex], propName = _a.propName, propNameSource = _a.propNameSource, subAccessorText = _a.subAccessorText, getPropName = _a.getPropName;
             //console.log(propName);
             if (propIndex <= 0) {
-                propValue = quickCopy(obj);
+                propValue = quickCopy(obj, option.useConstructor);
                 if (!subAccessorText) {
-                    propValue = setProp(propValue);
+                    propValue = option.ignoreIfNoChange ? newValue : setProp(propValue);
                 }
                 obj = propValue;
             }
@@ -211,12 +264,13 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
                     propName = getPropName(obj, context);
                 }
                 propValue = propValue[propName];
-                propValue = quickCopy(propValue);
+                propValue = quickCopy(propValue, option.useConstructor);
                 if (!subAccessorText) {
-                    propValue = setProp(propValue);
+                    propValue = option.ignoreIfNoChange ? newValue : setProp(propValue);
                 }
                 prevPropValue[propName] = propValue;
             }
+            //console.log(propValue);
         }
         return obj;
     }
@@ -252,7 +306,22 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
         if (cxtParameterName) {
             cxtParameterName = cxtParameterName.trim();
         }
-        var bodyText = funcText.substring(funcText.indexOf("{") + 1, funcText.lastIndexOf("}"));
+        var bodyStartIndex = funcText.indexOf("{");
+        var bodyEndIndex = funcText.lastIndexOf("}");
+        var bodyText = "";
+        if (bodyStartIndex > -1 && bodyEndIndex > -1) {
+            bodyText = funcText.substring(bodyStartIndex + 1, bodyEndIndex);
+        }
+        else {
+            var arrowIndex = funcText.indexOf("=>");
+            if (arrowIndex > -1) {
+                //console.log("Handle arrow function.");
+                bodyText = "return " + funcText.substring(arrowIndex + 3);
+            }
+            else {
+                throw new Error("Cannot parse function: " + funcText);
+            }
+        }
         var accessorTextInfo = getAccessorTextInfo(bodyText, option);
         info = {
             objParameterName: objParameterName,
@@ -328,7 +397,7 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
         return tokens;
     }
     function postProcessTokens(getPropFuncInfo) {
-        var _loop_1 = function() {
+        var _loop_1 = function () {
             var token = getPropFuncInfo.funcTokens[propIndex];
             var propName = token.propName, propNameSource = token.propNameSource, subAccessorText = token.subAccessorText;
             if (propNameSource == ePropNameSource.inBracket && isNaN(propName)) {
@@ -417,12 +486,16 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
             quotedTextInfos: quotedTextInfos,
         };
     }
-    function quickCopy(value) {
+    function quickCopy(value, useConstructor) {
         if (value != undefined && !(value instanceof Date)) {
             if (value instanceof Array) {
                 return value.slice();
             }
             else if (typeof (value) === "object") {
+                if (useConstructor) {
+                    var target = new value.constructor();
+                    return extend(target, value);
+                }
                 return extend({}, value);
             }
         }
@@ -474,8 +547,6 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
     // }
     return iassign;
 });
-//declare var iassign: IIassign;
-//export = iassign;
 
 
 /***/ }),
@@ -484,17 +555,21 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
 
 "use strict";
 
-var iassign = __webpack_require__(1);
-//iassign.freeze = true;
+Object.defineProperty(exports, "__esModule", { value: true });
+//import iassign = require('immutable-assign');
+const iassign = __webpack_require__(1);
+iassign.setOption({
+    freeze: true,
+});
 var map1 = { a: 1, b: 2, c: 3 };
 // 1: Calling iassign() to update map1.b, using overload 2 
-var map2 = iassign(map1, function (m) {
+var map2 = iassign(map1, (m) => {
     m.b = 50;
     return m;
 });
 if (typeof document !== "undefined") {
-    document.querySelector("#status").innerHTML += "<p>" + JSON.stringify(map1) + "</p>";
-    document.querySelector("#status").innerHTML += "<p>" + JSON.stringify(map2) + "</p>";
+    document.querySelector("#status").innerHTML += `<p>${JSON.stringify(map1)}</p>`;
+    document.querySelector("#status").innerHTML += `<p>${JSON.stringify(map2)}</p>`;
 }
 else {
     console.log(map1);

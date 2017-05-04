@@ -1,6 +1,7 @@
 // `CheckerPlugin` is optional. Use it if you want async error reporting.
 // We need this plugin to detect a `--watch` mode. It may be removed later
 // after https://github.com/webpack/webpack/issues/3460 will be resolved.
+const path = require('path');
 var loader = require('awesome-typescript-loader')
 var CheckerPlugin = loader.CheckerPlugin;
 console.log(CheckerPlugin);
@@ -11,7 +12,7 @@ module.exports = {
 
     output: {
         filename: 'bundle.js',
-        path: './dist'
+        path: path.resolve(__dirname, 'dist'),
     },
 
     // Currently we need to add '.ts' to the resolve.extensions array.

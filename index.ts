@@ -1,6 +1,9 @@
-import iassign = require('immutable-assign');
+//import iassign = require('immutable-assign');
+import * as iassign from "immutable-assign";
 
-//iassign.freeze = true;
+iassign.setOption({
+    freeze: true,
+});
  
 var map1 = { a:1, b:2, c:3 };
  
